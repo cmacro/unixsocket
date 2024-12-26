@@ -6,13 +6,23 @@
     "configurations": [
     
         {
-            "name": "Launch Autoclient",
+            "name": "Launch Auto Connect Client",
             "type": "go",
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}/example/autoclient",
             "cwd": "${workspaceFolder}/bin",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Launch Echo Server",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/example/echoServer",
+            "cwd": "${workspaceFolder}/bin",
+            "console": "integratedTerminal"
         }
+    
     ]
 }
