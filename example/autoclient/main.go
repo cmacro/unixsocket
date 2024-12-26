@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"sync"
 )
 
 type ServerMessage struct{}
@@ -21,30 +23,37 @@ func main() {
 
 	svrMsg := ServerMessage{}
 
+	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
-	go client.Connect(ctx, socketPath, &svrMsg)
+	wg.Add(1)
+	go func() { defer wg.Done(); client.Connect(ctx, socketPath, &svrMsg) }()
 
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		defer cancel()
 		readIOStd(ctx, client)
 	}()
 
 	<-ctx.Done()
+	wg.Wait()
+	log.Print("close auto connect client")
 }
 
 func readIOStd(_ context.Context, w io.Writer) {
+	defer func() { log.Print("read IO std closed") }()
 	reader := bufio.NewReader(os.Stdin)
 	writer := bufio.NewWriter(w)
 
 	for {
-		fmt.Print("Enter message: ")
+		log.Print("Enter message: ")
 		msg, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Printf("failed read stdin, %v", err)
+			log.Printf("failed read stdin, %v", err)
 			return
 		}
-		if msg == "q" {
-			fmt.Print("close of command")
+		if msg == "q\n" {
+			log.Print("close of command")
 			return
 		}
 
@@ -53,7 +62,7 @@ func readIOStd(_ context.Context, w io.Writer) {
 			err = writer.Flush()
 		}
 		if err != nil {
-			fmt.Printf("failed writer message, error: %v", err)
+			log.Printf("failed writer message: %s, error: %v", msg, err)
 		}
 	}
 }

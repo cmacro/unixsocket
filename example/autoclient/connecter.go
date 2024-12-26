@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/exp/rand"
 )
 
 type Client struct {
@@ -29,6 +31,7 @@ func NewClient() *Client {
 }
 
 func (c *Client) Connect(ctx context.Context, addr string, w io.Writer) error {
+	defer func() { log.Print("client connect closed") }()
 	c.writer = w
 
 	for {
@@ -50,12 +53,12 @@ func (c *Client) Connect(ctx context.Context, addr string, w io.Writer) error {
 		c.conn = conn
 		c.mu.Unlock()
 
-		// 开启读写协程
+		// open read and write loop
 		stopChan := make(chan struct{})
 		go c.readLoop(ctx, conn, stopChan)
 		c.writeLoop(ctx, conn, stopChan)
 
-		// 当写协程退出时，重新尝试连接
+		// close read and write loop
 		c.mu.Lock()
 		c.conn = nil
 		log.Printf("Disconnected to %s", addr)
@@ -63,9 +66,17 @@ func (c *Client) Connect(ctx context.Context, addr string, w io.Writer) error {
 	}
 }
 
+func randomJitter(baseDelay time.Duration) time.Duration {
+	jitter := time.Duration(rand.Int63n(int64(baseDelay / 2)))
+	return baseDelay + jitter
+}
+
 func (c *Client) autoConnect(ctx context.Context, addr string) (net.Conn, error) {
-	dialer := &net.Dialer{Timeout: 5 * time.Second}
-	for {
+	dialer := &net.Dialer{Timeout: 1 * time.Second}
+	baseDelay := time.Second
+	maxDelay := 20 * time.Second
+
+	for attempt := 1; ; attempt++ {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -74,8 +85,21 @@ func (c *Client) autoConnect(ctx context.Context, addr string) (net.Conn, error)
 			if err == nil {
 				return conn, nil
 			}
-			log.Printf("Connection failed, retrying in 5s: %v", err)
-			time.Sleep(5 * time.Second)
+			log.Printf("Connection failed, retrying in %v: %v", baseDelay, err)
+
+			delay := randomJitter(baseDelay)
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+			// 增加延迟时间
+			baseDelay *= 2
+			if baseDelay > maxDelay {
+				baseDelay = maxDelay
+			}
 		}
 	}
 }
