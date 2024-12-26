@@ -22,7 +22,7 @@ func main() {
 	svrMsg := ServerMessage{}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	client.Connect(ctx, socketPath, &svrMsg)
+	go client.Connect(ctx, socketPath, &svrMsg)
 
 	go func() {
 		defer cancel()

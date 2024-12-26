@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -50,12 +51,14 @@ func (c *Client) Connect(ctx context.Context, addr string, w io.Writer) error {
 		c.mu.Unlock()
 
 		// 开启读写协程
-		go c.readLoop(ctx, conn)
-		c.writeLoop(ctx, conn)
+		stopChan := make(chan struct{})
+		go c.readLoop(ctx, conn, stopChan)
+		c.writeLoop(ctx, conn, stopChan)
 
 		// 当写协程退出时，重新尝试连接
 		c.mu.Lock()
 		c.conn = nil
+		log.Printf("Disconnected to %s", addr)
 		c.mu.Unlock()
 	}
 }
@@ -77,32 +80,63 @@ func (c *Client) autoConnect(ctx context.Context, addr string) (net.Conn, error)
 	}
 }
 
-func (c *Client) readLoop(ctx context.Context, conn net.Conn) {
+func (c *Client) readLoop(ctx context.Context, conn net.Conn, stopChan chan<- struct{}) {
+	defer close(stopChan)
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
 
+	var cache bytes.Buffer // 动态缓冲区
+	buf := make([]byte, 4096)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			// 高效读取数据并写入 writer
-			_, err := reader.WriteTo(c.writer)
+			// 读取数据并写入 writer
+			n, err := reader.Read(buf)
+			if n > 0 {
+				cache.Write(buf[:n]) // 追加数据到缓冲区
+
+				// 写入 writer
+				if _, writeErr := c.writer.Write(cache.Bytes()); writeErr != nil {
+					log.Printf("Write error: %v", writeErr)
+					return
+				}
+
+				cache.Reset() // 清空缓冲区
+			}
+
 			if err != nil {
+				if errors.Is(err, io.EOF) {
+					log.Println("Server closed the connection")
+					return
+				}
 				log.Printf("Read error: %v", err)
+
+				// 如果是临时错误，可以延迟重试
+				if ne, ok := err.(net.Error); ok && ne.Temporary() {
+					time.Sleep(50 * time.Millisecond)
+					continue
+				}
+
+				// 非临时错误，退出
 				return
 			}
 		}
 	}
 }
 
-func (c *Client) writeLoop(ctx context.Context, conn net.Conn) {
+func (c *Client) writeLoop(ctx context.Context, conn net.Conn, stopChan <-chan struct{}) {
 	defer conn.Close()
 	writer := bufio.NewWriter(conn)
 
 	for {
 		select {
 		case <-ctx.Done():
+			log.Println("Write loop exiting due to context cancellation")
+			return
+		case <-stopChan:
+			log.Println("Write loop exiting: stop signal received")
 			return
 		case data := <-c.writeChan:
 			_, err := writer.Write(data)
