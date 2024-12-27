@@ -2,6 +2,23 @@
 Unix Domain Socket 
 
 
+**开发测试环境**
+
+```bash
+win11, wsl2
+
+dev@KAIFAPC:~$ cat /etc/os-release
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+NAME="Debian GNU/Linux"
+VERSION_ID="12"
+VERSION="12 (bookworm)"
+VERSION_CODENAME=bookworm
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+```
+
 example | note
 --- | ---
 server | 直接使用net实现连接服务
@@ -47,23 +64,72 @@ clientgnet | 使用gnet库实现连接，包括自动连接处理
 - **gnet：** 适用于高并发的网络应用，能够通过事件驱动和异步 I/O 实现高效的网络服务，处理大量连接时性能更优。
 - **net.Dial：** 适用于低并发、简单的网络应用，但在高并发场景下可能会导致性能瓶颈。
 
-## 开发测试环境
 
+
+
+## 测试
+
+简单测试连接
+
+- t12：使用 12 个线程来进行请求。
+- c10000：设置 10,000 个并发连接。
+- d30s：持续运行 30 秒。
 
 ```bash
-win11, wsl2
+go tool pprof -http=:8901 http://127.0.0.1:8801/debug/pprof/heap
 
-dev@KAIFAPC:~$ cat /etc/os-release
-PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
-NAME="Debian GNU/Linux"
-VERSION_ID="12"
-VERSION="12 (bookworm)"
-VERSION_CODENAME=bookworm
-ID=debian
-HOME_URL="https://www.debian.org/"
-SUPPORT_URL="https://www.debian.org/support"
-BUG_REPORT_URL="https://bugs.debian.org/"
+socat TCP-LISTEN:8080,reuseaddr,fork UNIX-CONNECT:/tmp/codesocket.tmp
+wrk -t12 -c10000 -d30s http://localhost:8080
+
+# 临时增加限制
+ulimit -n
+ulimit -n 100000
+
 ```
+
+### net.Dial
+
+测试出现管道错误问题
+```bash
+dev@KAIFAPC:~/github/unixsocket$ wrk -t12 -c10000 -d30s http://localhost:8080
+Running 30s test @ http://localhost:8080
+  12 threads and 10000 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     0.00us    0.00us   0.00us    -nan%
+    Req/Sec     0.00      0.00     0.00      -nan%
+  0 requests in 30.10s, 0.00B read
+  Socket errors: connect 0, read 182170, write 0, timeout 0
+Requests/sec:      0.00
+Transfer/sec:       0.00B
+
+2024/12/27 17:19:43 socat[96659] E write(6, 0x55fbd44a2000, 8): Broken pipe
+2024/12/27 17:19:43 socat[96657] E write(6, 0x55fbd44a2000, 8): Broken pipe
+2024/12/27 17:19:43 socat[96679] E write(6, 0x55fbd44a2000, 8): Broken pipe
+2024/12/27 17:19:43 socat[96680] E write(6, 0x55fbd44a2000, 8): Broken pipe
+```
+
+![](assets/2024-12-27-17-01-52.png)
+
+### gnet
+
+未出现 Broken pipe 错误
+
+```bash
+dev@KAIFAPC:~$ wrk -t12 -c10000 -d30s http://localhost:8080
+Running 30s test @ http://localhost:8080
+  12 threads and 10000 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     0.00us    0.00us   0.00us    -nan%
+    Req/Sec     0.00      0.00     0.00      -nan%
+  0 requests in 30.09s, 0.00B read
+  Socket errors: connect 0, read 165714, write 0, timeout 0
+Requests/sec:      0.00
+Transfer/sec:       0.00B
+```
+
+![](assets/2024-12-27-17-09-07.png)
+
+
 
 
 ## 相关问题

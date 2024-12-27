@@ -4,10 +4,16 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 )
 
 func main() {
+
+	fmt.Println("run pprof", ":8801")
+	go http.ListenAndServe(":8801", nil)
+
 	socketPath := "/tmp/codesocket.tmp"
 
 	// 清理旧的 Unix Socket 文件

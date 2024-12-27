@@ -1,7 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"net/http"
+
+	_ "net/http/pprof"
 
 	"github.com/panjf2000/gnet/v2"
 )
@@ -57,6 +61,9 @@ func (es *echoServer) OnTraffic(conn gnet.Conn) gnet.Action {
 }
 
 func main() {
+	fmt.Println("run pprof", ":8801")
+	go http.ListenAndServe(":8801", nil)
+
 	// Address to bind the server
 	address := "unix:///tmp/codesocket.tmp"
 	server := &echoServer{address: address}
