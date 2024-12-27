@@ -235,6 +235,13 @@ func readIOStd(ctx context.Context, w io.Writer) {
 				return
 			}
 
+			// _, err = writer.WriteString(msg)
+			// if err != nil {
+			// 	log.Printf("failed writer message: %s, error: %v", msg, err)
+			// 	continue
+			// }
+			// writer.Flush()
+
 			if _, err = w.Write(S2B(msg)); err != nil {
 				log.Printf("failed writer message: %s, error: %v", msg, err)
 				continue
